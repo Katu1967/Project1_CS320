@@ -1,7 +1,5 @@
 /*
-    1st gshare and tounroment are getting the wrong values, 
-    goal: call the base class function and add the needed logic to the derived class
-
+    Done by: Jackson Katusha, April 11th, 2025, Branch predictor project CS320
 */
 #include <iostream>
 #include <fstream>
@@ -9,7 +7,7 @@
 #include <sstream>
 #include <vector>
 #include <iomanip>
-#include <cmath>
+
 using namespace std;
 
 //use to store file entires 
@@ -19,12 +17,9 @@ struct Trace_e{
     unsigned long long target;
 };
 
-double round3(double val) {
-    return std::round(val * 1000.0) / 1000.0;
-}
-
 //base class
 class StaticTaken{
+    
     protected:
         string name = "Static Taken btb(8)";
         string predictedBranch;
@@ -78,13 +73,11 @@ class StaticTaken{
             if(actualBranch == "T"){
                 btb[btb_i] = actualTarget; 
             }
-
         }
 
         virtual void run_sim(const vector<Trace_e>& trace) {
 
             for(Trace_e t : trace) {
-              
                 progCounter = t.pc;
                 actualBranch = t.branch;
                 actualTarget = t.target;
@@ -97,13 +90,13 @@ class StaticTaken{
             return;
         }
         void output_vals(){
-
-            //double branchAccuracy = 100.0 * (static_cast<double>(numCorrectPred) / totalBranch);
-            //double targetAccuracy = 100.0 * (static_cast<double>(numCorrectTarget) / totalBranch);
-
             cout << setw(40) << right << name << ": " << setw(1) << fixed << setprecision(3) << 100.0 * (static_cast<double>(numCorrectPred) / totalBranch) << "%; " << setw(1) << 100.0 * (static_cast<double>(numCorrectTarget) / totalBranch) << "%" <<   endl;
             return;
-        }    
+        } 
+        void execute(const vector<Trace_e>& trace){
+            run_sim(trace);
+            output_vals();
+        }   
 };
 
 //DONE
@@ -248,9 +241,7 @@ class Correlated : public StaticTaken{
             } else {
                 cout << "Size not in selected testing range for correlated predictor" << endl;
             }
-            
-
-            //CHANGED BTB HERE
+    
             btb.resize(btb_size, 0);
         }
         string prediction(unsigned long long progCounter, const string &actualBranch) override{
@@ -274,7 +265,6 @@ class Correlated : public StaticTaken{
                 if(actualBranch == "T"){
                     branch_history |= 1;
                 }
-
                 //clear unneeeded history
                 branch_history = branch_history & 0b11;
         }
@@ -293,21 +283,21 @@ class Gshare : public StaticTaken{
         Gshare(int size, int btbs){
             if (size == 3) {
                 name = "Gshare(3 bit) btb(16)";
-                gshare_mask = 0x00000007;
+                //gshare_mask = 0x00000007;
             } else if (size == 4) {
                 name = "Gshare(4 bit) btb(32)";
-                gshare_mask = 0x0000000F;
+                //gshare_mask = 0x0000000F;
             } else if (size == 5) {
                 name = "Gshare(5 bit) btb(32)";
-                gshare_mask = 0x0000001F;
+                //gshare_mask = 0x0000001F;
             } else if (size == 10) {
                 name = "Gshare(10 bit) btb(64)";
-                gshare_mask = 0x000003FF;
+                //gshare_mask = 0x000003FF;
             } 
             gshare_table.resize(2048, 3);
             btb_size = btbs;
             btb.resize(btb_size, 0);
-            //gshare_mask = (1 << size) - 1 ;
+            gshare_mask = (1 << size) - 1 ;
             table_size = size;
         }
 
@@ -329,6 +319,7 @@ class Gshare : public StaticTaken{
         }
         void update() override{
                 StaticTaken :: update();
+
                 //update the gshare table
                 if(actualBranch == "T" && gshare_table[gshare_i] < 3){
                     gshare_table[gshare_i]++;
@@ -352,14 +343,15 @@ class Tournament : public StaticTaken{
     private:
         BinomialTwo bi;
         Gshare gsh;
-        vector <int> t_table;
+        int counter;
         int tournament_i;
         string bpred, gpred;
         
     public:
         Tournament() : bi(2048, 64), gsh(4, 64){
             name = "T-2Bit Bi(2048)/Gshare(4 bit) btb(64)";
-            t_table.resize(2048, 3);
+
+            counter = 0;
             btb_size = 64;
             btb.resize(btb_size, 0);
         }
@@ -370,7 +362,7 @@ class Tournament : public StaticTaken{
             gpred = gsh.prediction(progCounter, actualBranch);
             bpred = bi.prediction(progCounter, actualBranch);
 
-            if(t_table[tournament_i] >= 2){
+            if(counter >= 2){
                 predictedBranch = bpred;
             }
             else{
@@ -381,32 +373,22 @@ class Tournament : public StaticTaken{
 
         void update()override{
             StaticTaken :: update();
-
             if(bpred == actualBranch && gpred != actualBranch){
-                if(t_table[tournament_i] < 3)
-                    t_table[tournament_i]++;
+                if(counter < 3)
+                    counter++;
             }
             else if(bpred != actualBranch && gpred == actualBranch){
-                if(t_table[tournament_i] > 0)
-                    t_table[tournament_i]--;
+                if(counter > 0)
+                    counter--;
             }
+            gsh.update();
+            bi.update();
+            return;
         }
 };
 
-template<typename PredictorType>
-void run(PredictorType& pred, const string& filename) {
-    ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Error opening " << filename << endl;
-        return;
-    }
-    pred.run_sim(file);
-    pred.output_vals();
-}
-
-int main(int argc, char *argv[]){
+void read_trace(vector<Trace_e>& trace){
     //store the entries in a vector 
-    vector<Trace_e> trace;
     string line;
     while (getline(cin, line)) {
         stringstream s(line);
@@ -417,71 +399,38 @@ int main(int argc, char *argv[]){
         s >> hex >> pc >> behavior >> hex >> target;
         trace.push_back({pc, behavior, target});
     }
+    return;
+}
 
-    StaticTaken pred;
-    StaticNotTaken pred2;
-    Binomial Bi16(16);
-    Binomial Bi32(32);
-    Binomial Bi128(128);
-    Binomial Bi2048(2048);
-    BinomialTwo Bi16Two(16, 16);
-    BinomialTwo Bi32Two(32, 16);
-    BinomialTwo Bi128Two(128, 32);
-    BinomialTwo Bi2048Two(2048, 64);
-    Correlated Cor16(16);
-    Correlated Cor1024(1024);
-    Gshare gshare(3, 16);
-    Gshare gshare2(4, 32);
-    Gshare gshare3(5, 32);
-    Gshare gshare4(10, 64);
-    Tournament t;
 
-    //taken
-    pred.run_sim(trace);
-    pred.output_vals();
+int main(int argc, char *argv[]){
+    //store the entries in a vector 
+    vector<Trace_e> trace;
+    read_trace(trace);
 
-    //not takem
-    pred2.run_sim(trace);
-    pred2.output_vals();
-    
-    //binomial
-    Bi16.run_sim(trace);
-    Bi16.output_vals();
-    Bi32.run_sim(trace);
-    Bi32.output_vals();
-    Bi128.run_sim(trace);
-    Bi128.output_vals();
-    Bi2048.run_sim(trace);
-    Bi2048.output_vals();
-    //2 bit
-    Bi16Two.run_sim(trace);
-    Bi16Two.output_vals();
-    Bi32Two.run_sim(trace);
-    Bi32Two.output_vals();
-    Bi128Two.run_sim(trace);
-    Bi128Two.output_vals();
-    Bi2048Two.run_sim(trace);
-    Bi2048Two.output_vals();
-    
-    //correlated, both have an issue 
-    Cor16.run_sim(trace);
-    Cor16.output_vals();
-    Cor1024.run_sim(trace);
-    Cor1024.output_vals();
-    
-    //gshare
-    gshare.run_sim(trace);
-    gshare.output_vals();
-    gshare2.run_sim(trace);
-    gshare2.output_vals();
-    gshare3.run_sim(trace);
-    gshare3.output_vals();
-    gshare4.run_sim(trace);
-    gshare4.output_vals();
+    StaticTaken* list[] = {
+        new StaticTaken(),
+        new StaticNotTaken(),
+        new Binomial(16),
+        new Binomial(32),
+        new Binomial(128),
+        new Binomial(2048),
+        new BinomialTwo(16, 16),
+        new BinomialTwo(32, 16),
+        new BinomialTwo(128, 32),
+        new BinomialTwo(2048, 64),
+        new Correlated(16),
+        new Correlated(1024),
+        new Gshare(3, 16),
+        new Gshare(4, 32),
+        new Gshare(5, 32),
+        new Gshare(10, 64),
+        new Tournament()
+    };
 
-    //tournament
-    t.run_sim(trace);
-    t.output_vals();
-    
+    for (auto* pred : list){
+        pred->execute(trace);
+    }
+
     return 0;
 }
