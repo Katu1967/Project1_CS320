@@ -9,7 +9,19 @@
 #include <sstream>
 #include <vector>
 #include <iomanip>
+#include <cmath>
 using namespace std;
+
+//use to store file entires 
+struct Trace_e{
+    unsigned long long pc;
+    string branch;
+    unsigned long long target;
+};
+
+double round3(double val) {
+    return std::round(val * 1000.0) / 1000.0;
+}
 
 //base class
 class StaticTaken{
@@ -69,37 +81,27 @@ class StaticTaken{
 
         }
 
-        virtual void run_sim(const string &filename){
+        virtual void run_sim(const vector<Trace_e>& trace) {
 
-            ifstream file(filename);
-
-            
-            if(!file.is_open()){
-                cout << "Error opening file" << endl;
-                return;
-            }
-
-            unsigned long long pc, target; 
-            string line,tnts; 
-
-            while(getline(file, line)) { 
-                stringstream s(line); 
-                s >> hex >> pc >> tnts >> hex >> target;
-            
-                //store values in respective places
-                progCounter = pc;
-                actualBranch = tnts;
-                actualTarget = target;
+            for(Trace_e t : trace) {
+              
+                progCounter = t.pc;
+                actualBranch = t.branch;
+                actualTarget = t.target;
                 totalBranch++;
 
                 predictedBranch = prediction(progCounter, actualBranch);
-
                 update();
+
             }
             return;
         }
         void output_vals(){
-            cout << setw(40) << right << name << ": " << setw(1) << fixed << setprecision(3) << (float)numCorrectPred/totalBranch * 100.0 << "%; " << setw(1) << ((float)numCorrectTarget/totalBranch * 100) + .00001 << "%" <<   endl;
+
+            //double branchAccuracy = 100.0 * (static_cast<double>(numCorrectPred) / totalBranch);
+            //double targetAccuracy = 100.0 * (static_cast<double>(numCorrectTarget) / totalBranch);
+
+            cout << setw(40) << right << name << ": " << setw(1) << fixed << setprecision(3) << 100.0 * (static_cast<double>(numCorrectPred) / totalBranch) << "%; " << setw(1) << 100.0 * (static_cast<double>(numCorrectTarget) / totalBranch) << "%" <<   endl;
             return;
         }    
 };
@@ -312,18 +314,11 @@ class Gshare : public StaticTaken{
         string prediction(unsigned long long progCounter, const string &actualBranch) override{
             //correct get the number bits
             int masked = history_register & gshare_mask;
+
+            int pc_shift = progCounter >> 2;
             
-            gshare_i = (progCounter ^ masked) & 0x3FF;
+            gshare_i = (pc_shift ^ masked) & 0x3FF;
 
-
-           /* 
-            if (table_size >= 4){
-                gshare_i = ((progCounter >> 2) ^ (history_register << (11 - table_size))) & 0b11111111111;
-            }else{
-                gshare_i = (progCounter ^ history_register) & 0x3FF; 
-                //gshare_i = ((progCounter >> 2) ^ (history_register<< (10 - table_size))) & 0b1111111111;
-            }
-*/
             if(gshare_table[gshare_i] >= 2){
                 predictedBranch = "T";
             }
@@ -364,7 +359,7 @@ class Tournament : public StaticTaken{
     public:
         Tournament() : bi(2048, 64), gsh(4, 64){
             name = "T-2Bit Bi(2048)/Gshare(4 bit) btb(64)";
-            t_table.resize(2048, 0);
+            t_table.resize(2048, 3);
             btb_size = 64;
             btb.resize(btb_size, 0);
         }
@@ -409,11 +404,19 @@ void run(PredictorType& pred, const string& filename) {
     pred.output_vals();
 }
 
-
 int main(int argc, char *argv[]){
+    //store the entries in a vector 
+    vector<Trace_e> trace;
+    string line;
+    while (getline(cin, line)) {
+        stringstream s(line);
 
-    
-    string in_file = argv[1];
+        unsigned long long pc, target;
+        string behavior;
+
+        s >> hex >> pc >> behavior >> hex >> target;
+        trace.push_back({pc, behavior, target});
+    }
 
     StaticTaken pred;
     StaticNotTaken pred2;
@@ -433,56 +436,51 @@ int main(int argc, char *argv[]){
     Gshare gshare4(10, 64);
     Tournament t;
 
-
     //taken
-    pred.run_sim(in_file);
+    pred.run_sim(trace);
     pred.output_vals();
 
     //not takem
-    pred2.run_sim(in_file);
+    pred2.run_sim(trace);
     pred2.output_vals();
     
     //binomial
-    Bi16.run_sim(in_file);
+    Bi16.run_sim(trace);
     Bi16.output_vals();
-    Bi32.run_sim(in_file);
+    Bi32.run_sim(trace);
     Bi32.output_vals();
-    Bi128.run_sim(in_file);
+    Bi128.run_sim(trace);
     Bi128.output_vals();
-    Bi2048.run_sim(in_file);
+    Bi2048.run_sim(trace);
     Bi2048.output_vals();
     //2 bit
-    Bi16Two.run_sim(in_file);
+    Bi16Two.run_sim(trace);
     Bi16Two.output_vals();
-    Bi32Two.run_sim(in_file);
+    Bi32Two.run_sim(trace);
     Bi32Two.output_vals();
-    Bi128Two.run_sim(in_file);
+    Bi128Two.run_sim(trace);
     Bi128Two.output_vals();
-    Bi2048Two.run_sim(in_file);
+    Bi2048Two.run_sim(trace);
     Bi2048Two.output_vals();
     
-
-    
     //correlated, both have an issue 
-    Cor16.run_sim(in_file);
+    Cor16.run_sim(trace);
     Cor16.output_vals();
-    Cor1024.run_sim(in_file);
+    Cor1024.run_sim(trace);
     Cor1024.output_vals();
     
-    
-   
     //gshare
-    gshare.run_sim(in_file);
+    gshare.run_sim(trace);
     gshare.output_vals();
-    gshare2.run_sim(in_file);
+    gshare2.run_sim(trace);
     gshare2.output_vals();
-    gshare3.run_sim(in_file);
+    gshare3.run_sim(trace);
     gshare3.output_vals();
-    gshare4.run_sim(in_file);
+    gshare4.run_sim(trace);
     gshare4.output_vals();
 
     //tournament
-    t.run_sim(in_file);
+    t.run_sim(trace);
     t.output_vals();
     
     return 0;
