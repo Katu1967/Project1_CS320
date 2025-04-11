@@ -404,7 +404,6 @@ void read_trace(vector<Trace_e>& trace){
 
 
 int main(int argc, char *argv[]){
-    //store the entries in a vector 
     vector<Trace_e> trace;
     read_trace(trace);
 
